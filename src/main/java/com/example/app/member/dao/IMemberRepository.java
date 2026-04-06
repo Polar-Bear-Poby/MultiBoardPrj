@@ -3,9 +3,13 @@ package com.example.app.member.dao;
 
 import java.util.List;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.springframework.stereotype.Repository;
 
 import com.example.app.member.model.Member;
-  
+
+@Mapper
+@Repository
 public interface IMemberRepository { 
 	void insertMember(Member member);
 	 Member selectMember(String userid);
