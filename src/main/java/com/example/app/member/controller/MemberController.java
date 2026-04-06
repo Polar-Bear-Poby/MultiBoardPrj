@@ -3,14 +3,21 @@ package com.example.app.member.controller;
 import java.util.UUID;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.PostMapping;
+
+import com.example.app.member.MemberValidator;
 import com.example.app.member.model.Member;
 import com.example.app.member.service.IMemberService;
 
@@ -21,41 +28,55 @@ public class MemberController {
     @Autowired
     IMemberService memberService;
 
+    @Autowired
+    MemberValidator memberValidator;
+
+    @InitBinder
+    private void initBinder(WebDataBinder binder) {
+        binder.setValidator(memberValidator);
+    }
+
     @GetMapping("/member/insert")
-    public String insertMember(HttpSession session) {
+    public String insertMember(HttpSession session, Model model) {
         String csrfToken = UUID.randomUUID().toString();
         session.setAttribute("csrfToken", csrfToken);
         logger.info("/member/insert, GET", csrfToken);
+        model.addAttribute("member", new Member());
         return "member/form";
     }
 
-    @PostMapping("/member/insert")
-    public String insertMember(Member member, String csrfToken, HttpSession session, Model model) {
+    @PostMapping(value="/member/insert")
+    public String memberInsert(@Validated Member member, BindingResult result,
+        String csrfToken, HttpSession session, Model model) {
         if(csrfToken==null || "".equals(csrfToken)) {
             throw new RuntimeException("CSRF 토큰이 없습니다.");
         }else if(!csrfToken.equals(session.getAttribute("csrfToken"))) {
             throw new RuntimeException("잘 못된 접근이 감지되었습니다.");
         }
-        try {
-            if(!member.getPassword().equals(member.getPassword2())) {
+        if(result.hasErrors()) {
+            model.addAttribute("member", member);
+            return "member/form";
+        }
+            try {
+                if(!member.getPassword().equals(member.getPassword2())) {
                 model.addAttribute("member", member);
                 model.addAttribute("message", "MEMBER_PW_RE");
                 return "member/form";
             }
             memberService.insertMember(member);
-        }catch(DuplicateKeyException e) {
-            member.setUserid(null);
-            model.addAttribute("member", member);
-            model.addAttribute("message", "ID_ALREADY_EXIST");
-            return "member/form";
+            }catch(DuplicateKeyException e) {
+                member.setUserid(null);
+                model.addAttribute("member", member);
+                model.addAttribute("message", "ID_ALREADY_EXIST");
+                return "member/form";
+            }
+            session.invalidate();
+            return "home";
         }
-        session.invalidate();
-        return "home";
-    }
 
-    @GetMapping("/member/login")
-    public String login() {
-        return "member/login";
+        @GetMapping("/member/login")
+        public String login() {
+            return "member/login";
     }
 
     @PostMapping("/member/login")
@@ -99,8 +120,13 @@ public class MemberController {
         }
     }
 
-    @PostMapping("/member/update")
-    public String updateMember(Member member, HttpSession session, Model model) {
+    @PostMapping(value="/member/update")
+    public String updateMember(@Validated Member member, BindingResult result,
+        HttpSession session, Model model) {
+        if(result.hasErrors()) {
+            model.addAttribute("member", member);
+            return "member/update";
+        }
         try{
             memberService.updateMember(member);
             model.addAttribute("message", "UPDATED_MEMBER_INFO");

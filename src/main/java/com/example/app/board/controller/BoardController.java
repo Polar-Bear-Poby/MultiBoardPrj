@@ -3,7 +3,6 @@ package com.example.app.board.controller;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.List;
-import java.util.UUID;
 
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
@@ -17,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,31 +30,47 @@ import com.example.app.board.model.BoardUploadFile;
 import com.example.app.board.service.IBoardCategoryService;
 import com.example.app.board.service.IBoardService;
 
+import jakarta.servlet.http.HttpServletRequest; // tomcat 9이하면 javax.servlet
 import jakarta.servlet.http.HttpSession;
 
 @Controller
 public class BoardController {
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(BoardController.class);
 
 	@Autowired
 	IBoardService boardService;
-	
+
 	@Autowired
 	IBoardCategoryService categoryService;
-		
+
 	@GetMapping("/board/cat/{categoryId}/{page}")
 	public String getListByCategory(@PathVariable int categoryId, @PathVariable int page, HttpSession session, Model model) {
 		session.setAttribute("page", page);
 		model.addAttribute("categoryId", categoryId);
+
 		List<Board> boardList = boardService.selectArticleListByCategory(categoryId, page);
 		model.addAttribute("boardList", boardList);
+
 		int bbsCount = boardService.selectTotalArticleCountByCategoryId(categoryId);
 		int totalPage = 0;
-		if(bbsCount > 0) {
-			totalPage= (int)Math.ceil(bbsCount/10.0);
+		if (bbsCount > 0) {
+			totalPage = (int) Math.ceil(bbsCount / 10.0);
+		}
+		int totalPageBlock = (int) (Math.ceil(totalPage / 10.0));
+		int nowPageBlock = (int) Math.ceil(page / 10.0);
+		int startPage = (nowPageBlock - 1) * 10 + 1;
+		int endPage;
+		if (totalPage > nowPageBlock * 10) {
+			endPage = nowPageBlock * 10;
+		} else {
+			endPage = totalPage;
 		}
 		model.addAttribute("totalPageCount", totalPage);
-		model.addAttribute("page", page);
+		model.addAttribute("nowPage", page);
+		model.addAttribute("totalPageBlock", totalPageBlock);
+		model.addAttribute("nowPageBlock", nowPageBlock);
+		model.addAttribute("startPage", startPage);
+		model.addAttribute("endPage", endPage);
 		return "board/list";
 	}
 
@@ -62,14 +78,20 @@ public class BoardController {
 	public String getListByCategory(@PathVariable int categoryId, HttpSession session, Model model) {
 		return getListByCategory(categoryId, 1, session, model);
 	}
-	
+
 	@GetMapping("/board/{boardId}/{page}")
 	public String getBoardDetails(@PathVariable int boardId, @PathVariable int page, Model model) {
 		Board board = boardService.selectArticle(boardId);
+		String fileName = board.getFileName();
+		if (fileName != null) {
+			int fileLength = fileName.length();
+			String fileType = fileName.substring(fileLength - 4, fileLength).toUpperCase();
+			model.addAttribute("fileType", fileType);
+		}
 		model.addAttribute("board", board);
 		model.addAttribute("page", page);
 		model.addAttribute("categoryId", board.getCategoryId());
-		logger.info("getBoardDetails " + board.toString());
+		logger.info("getBoardDetails {}", board);
 		return "board/view";
 	}
 
@@ -77,51 +99,44 @@ public class BoardController {
 	public String getBoardDetails(@PathVariable int boardId, Model model) {
 		return getBoardDetails(boardId, 1, model);
 	}
-	
-	@GetMapping(value="/board/write/{categoryId}")
-	public String writeArticle(@PathVariable int categoryId, HttpSession session, Model model) {
-		// CSRF 토큰 생성 후 세션에 저장
-		String csrfToken = UUID.randomUUID().toString(); // CSRF 토큰 생성
-		session.setAttribute("csrfToken", csrfToken);    // 세션에 저장
+
+	@GetMapping(value = "/board/write/{categoryId}")
+	public String writeArticle(@PathVariable int categoryId, Model model) {
 		List<BoardCategory> categoryList = categoryService.selectAllCategory();
 		model.addAttribute("categoryList", categoryList);
 		model.addAttribute("categoryId", categoryId);
 		return "board/write";
 	}
-	
-	@PostMapping(value="/board/write")
-	public String writeArticle(Board board, BindingResult results, String csrfToken, HttpSession session, RedirectAttributes redirectAttrs) {
-		logger.info("/board/write : " + board.toString() + csrfToken);
-		String sessionToken = (String) session.getAttribute("csrfToken");
-		if(csrfToken==null || !csrfToken.equals(sessionToken)) {
-			throw new RuntimeException("CSRF Token Error.");
-		}
-		try{
+
+	@PostMapping(value = "/board/write")
+	public String writeArticle(Board board, BindingResult results, RedirectAttributes redirectAttrs) {
+		logger.info("/board/write : {}", board);
+		try {
 			board.setContent(board.getContent().replace("\r\n", "<br>"));
 			board.setTitle(Jsoup.clean(board.getTitle(), Safelist.basic()));
 			board.setContent(Jsoup.clean(board.getContent(), Safelist.basic()));
 			MultipartFile mfile = board.getFile();
-			if(mfile!=null && !mfile.isEmpty()) {
+			if (mfile != null && !mfile.isEmpty()) {
 				BoardUploadFile file = new BoardUploadFile();
 				file.setFileName(mfile.getOriginalFilename());
 				file.setFileSize(mfile.getSize());
 				file.setFileContentType(mfile.getContentType());
 				file.setFileData(mfile.getBytes());
 				boardService.insertArticle(board, file);
-			}else {
+			} else {
 				boardService.insertArticle(board);
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			e.printStackTrace();
 			redirectAttrs.addFlashAttribute("message", e.getMessage());
 		}
-		return "redirect:/board/cat/"+board.getCategoryId();
+		return "redirect:/board/cat/" + board.getCategoryId();
 	}
 
 	@GetMapping("/file/{fileId}")
 	public ResponseEntity<byte[]> getFile(@PathVariable int fileId) {
 		BoardUploadFile file = boardService.getFile(fileId);
-		logger.info("getFile " + file.toString());
+		logger.info("getFile {}", file);
 		final HttpHeaders headers = new HttpHeaders();
 		String[] mtypes = file.getFileContentType().split("/");
 		headers.setContentType(new MediaType(mtypes[0], mtypes[1]));
@@ -132,51 +147,51 @@ public class BoardController {
 		} catch (UnsupportedEncodingException e) {
 			throw new RuntimeException(e);
 		}
-		return new ResponseEntity<byte[]>(file.getFileData(), headers, HttpStatus.OK);
+		return new ResponseEntity<>(file.getFileData(), headers, HttpStatus.OK);
 	}
-	
-	@GetMapping(value="/board/reply/{boardId}")
+
+	@GetMapping(value = "/board/reply/{boardId}")
 	public String replyArticle(@PathVariable int boardId, Model model) {
 		Board board = boardService.selectArticle(boardId);
 		board.setWriter("");
 		board.setEmail("");
-		board.setTitle("[Re]"+board.getTitle());
+		board.setTitle("[Re]" + board.getTitle());
 		board.setContent("\n\n\n----------\n" + board.getContent().replaceAll("<br>", "\n"));
 		model.addAttribute("board", board);
 		model.addAttribute("next", "reply");
 		return "board/reply";
 	}
-	
-	@PostMapping(value="/board/reply")
+
+	@PostMapping(value = "/board/reply")
 	public String replyArticle(Board board, RedirectAttributes redirectAttrs, HttpSession session) {
-		logger.info("/board/reply : " + board.toString());
-		try{
+		logger.info("/board/reply : {}", board);
+		try {
 			board.setContent(board.getContent().replace("\r\n", "<br>"));
 			board.setTitle(Jsoup.clean(board.getTitle(), Safelist.basic()));
 			board.setContent(Jsoup.clean(board.getContent(), Safelist.basic()));
 			MultipartFile mfile = board.getFile();
-			if(mfile!=null && !mfile.isEmpty()) {
+			if (mfile != null && !mfile.isEmpty()) {
 				BoardUploadFile file = new BoardUploadFile();
 				file.setFileName(mfile.getOriginalFilename());
 				file.setFileSize(mfile.getSize());
 				file.setFileContentType(mfile.getContentType());
 				file.setFileData(mfile.getBytes());
 				boardService.replyArticle(board, file);
-			}else {
+			} else {
 				boardService.replyArticle(board);
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			e.printStackTrace();
 			redirectAttrs.addFlashAttribute("message", e.getMessage());
 		}
-		if(session.getAttribute("page") != null) {
-			return "redirect:/board/cat/"+board.getCategoryId() + "/" + (Integer)session.getAttribute("page");
-		}else {
-			return "redirect:/board/cat/"+board.getCategoryId(); 
+		if (session.getAttribute("page") != null) {
+			return "redirect:/board/cat/" + board.getCategoryId() + "/" + (Integer) session.getAttribute("page");
+		} else {
+			return "redirect:/board/cat/" + board.getCategoryId();
 		}
 	}
 
-	@GetMapping(value="/board/update/{boardId}")
+	@GetMapping(value = "/board/update/{boardId}")
 	public String updateArticle(@PathVariable int boardId, Model model) {
 		List<BoardCategory> categoryList = categoryService.selectAllCategory();
 		Board board = boardService.selectArticle(boardId);
@@ -187,40 +202,40 @@ public class BoardController {
 		return "board/update";
 	}
 
-	@PostMapping(value="/board/update")
+	@PostMapping(value = "/board/update")
 	public String updateArticle(Board board, RedirectAttributes redirectAttrs) {
-		logger.info("/board/update " + board.toString());
+		logger.info("/board/update {}", board);
 		String dbPassword = boardService.getPassword(board.getBoardId());
-		if(!board.getPassword().equals(dbPassword)) {
+		if (!board.getPassword().equals(dbPassword)) {
 			redirectAttrs.addFlashAttribute("passwordError", "게시글 비밀번호가 다릅니다");
 			return "redirect:/board/update/" + board.getBoardId();
 		}
-		try{
+		try {
 			board.setContent(board.getContent().replace("\r\n", "<br>"));
 			board.setTitle(Jsoup.clean(board.getTitle(), Safelist.basic()));
 			board.setContent(Jsoup.clean(board.getContent(), Safelist.basic()));
 			MultipartFile mfile = board.getFile();
-			if(mfile!=null && !mfile.isEmpty()) {
-				logger.info("/board/update : " + mfile.getOriginalFilename());
+			if (mfile != null && !mfile.isEmpty()) {
+				logger.info("/board/update : {}", mfile.getOriginalFilename());
 				BoardUploadFile file = new BoardUploadFile();
 				file.setFileId(board.getFileId());
 				file.setFileName(mfile.getOriginalFilename());
 				file.setFileSize(mfile.getSize());
 				file.setFileContentType(mfile.getContentType());
 				file.setFileData(mfile.getBytes());
-				logger.info("/board/update : " + file.toString());
+				logger.info("/board/update : {}", file);
 				boardService.updateArticle(board, file);
-			}else {
+			} else {
 				boardService.updateArticle(board);
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			e.printStackTrace();
 			redirectAttrs.addFlashAttribute("message", e.getMessage());
 		}
-		return "redirect:/board/"+board.getBoardId();
+		return "redirect:/board/" + board.getBoardId();
 	}
 
-	@GetMapping(value="/board/delete/{boardId}")
+	@GetMapping(value = "/board/delete/{boardId}")
 	public String deleteArticle(@PathVariable int boardId, Model model) {
 		Board board = boardService.selectDeleteArticle(boardId);
 		model.addAttribute("categoryId", board.getCategoryId());
@@ -228,19 +243,19 @@ public class BoardController {
 		model.addAttribute("replyNumber", board.getReplyNumber());
 		return "board/delete";
 	}
-	
-	@PostMapping(value="/board/delete")
+
+	@PostMapping(value = "/board/delete")
 	public String deleteArticle(Board board, HttpSession session, RedirectAttributes model) {
 		try {
 			String dbpw = boardService.getPassword(board.getBoardId());
-			if(dbpw.equals(board.getPassword())) {
+			if (dbpw.equals(board.getPassword())) {
 				boardService.deleteArticle(board.getBoardId(), board.getReplyNumber());
-				return "redirect:/board/cat/" + board.getCategoryId() + "/" + (Integer)session.getAttribute("page");
-			}else {
+				return "redirect:/board/cat/" + board.getCategoryId() + "/" + (Integer) session.getAttribute("page");
+			} else {
 				model.addFlashAttribute("message", "WRONG_PASSWORD_NOT_DELETED");
 				return "redirect:/board/delete/" + board.getBoardId();
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			model.addAttribute("message", e.getMessage());
 			e.printStackTrace();
 			return "error/runtime";
@@ -248,22 +263,42 @@ public class BoardController {
 	}
 
 	@GetMapping("/board/search/{page}")
-	public String search(@RequestParam(required=false, defaultValue="") String keyword, @PathVariable int page, HttpSession session, Model model) {
+	public String search(@RequestParam(required = false, defaultValue = "") String keyword, @PathVariable int page, HttpSession session, Model model) {
 		try {
 			List<Board> boardList = boardService.searchListByContentKeyword(keyword, page);
 			model.addAttribute("boardList", boardList);
 			int bbsCount = boardService.selectTotalArticleCountByKeyword(keyword);
 			int totalPage = 0;
-			if(bbsCount > 0) {
-				totalPage= (int)Math.ceil(bbsCount/10.0);
+			if (bbsCount > 0) {
+				totalPage = (int) Math.ceil(bbsCount / 10.0);
 			}
-			model.addAttribute("totalPageCount", totalPage);
-			model.addAttribute("page", page);
+			int totalPageBlock = (int) (Math.ceil(totalPage / 10.0));
+			int nowPageBlock = (int) Math.ceil(page / 10.0);
+			int startPage = (nowPageBlock - 1) * 10 + 1;
+			int endPage;
+			if (totalPage > nowPageBlock * 10) {
+				endPage = nowPageBlock * 10;
+			} else {
+				endPage = totalPage;
+			}
 			model.addAttribute("keyword", keyword);
-			logger.info(totalPage + ":" + page + ":" + keyword);
-		} catch(Exception e) {
+			model.addAttribute("totalPageCount", totalPage);
+			model.addAttribute("nowPage", page);
+			model.addAttribute("totalPageBlock", totalPageBlock);
+			model.addAttribute("nowPageBlock", nowPageBlock);
+			model.addAttribute("startPage", startPage);
+			model.addAttribute("endPage", endPage);
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 		return "board/search";
+	}
+
+	@ExceptionHandler({RuntimeException.class})
+	public String error(HttpServletRequest request, Exception ex, Model model) {
+		model.addAttribute("exception", ex);
+		model.addAttribute("stackTrace", ex.getStackTrace());
+		model.addAttribute("url", request.getRequestURI());
+		return "error/runtime";
 	}
 }

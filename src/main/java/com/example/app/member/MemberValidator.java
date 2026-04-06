@@ -1,8 +1,10 @@
-package com.example.app.member.model;
+package com.example.app.member;
 
 import org.springframework.stereotype.Component;
 import org.springframework.validation.Errors;
 import org.springframework.validation.Validator;
+
+import com.example.app.member.model.Member;
 
 @Component
 public class MemberValidator implements Validator {

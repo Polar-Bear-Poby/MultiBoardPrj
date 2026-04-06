@@ -2,7 +2,6 @@ package com.example.app.config;
 
 import java.util.Locale;
 
-
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +27,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Bean(value="messageSource")
     MessageSource messageSource() {
         ResourceBundleMessageSource messageSource = new ResourceBundleMessageSource();
-        messageSource.setBasename("i8n/message");
+        messageSource.setBasename("i18n/message");
         messageSource.setDefaultEncoding("UTF-8");
         return messageSource;
     }
