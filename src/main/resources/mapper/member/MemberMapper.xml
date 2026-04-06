@@ -2,10 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.example.myapp.member.dao.IMemberRepository">
+<mapper namespace="com.example.app.member.dao.IMemberRepository">
 
     <insert id="insertMember"
-        parameterType="com.example.myapp.member.model.Member">
+        parameterType="com.example.app.member.model.Member">
         <![CDATA[
             INSERT INTO
                 member (userid, name, password, phone, email)
@@ -15,7 +15,7 @@
     </insert>
 
     <select id="selectMember" parameterType="string"
-        resultType="com.example.myapp.member.model.Member">
+        resultType="com.example.app.member.model.Member">
         <![CDATA[
             SELECT userid, name, password, phone, email, role
             FROM   member
@@ -24,7 +24,7 @@
     </select>
 
     <select id="selectAllMembers"
-        resultType="com.example.myapp.member.model.Member">
+        resultType="com.example.app.member.model.Member">
         <![CDATA[
             SELECT userid, name, password, phone, address, role
             FROM   member
@@ -32,7 +32,7 @@
     </select>
 
     <update id="updateMember"
-        parameterType="com.example.myapp.member.model.Member">
+        parameterType="com.example.app.member.model.Member">
         <![CDATA[
             UPDATE MEMBER
             SET    name=#{name}, password=#{password}, phone=#{phone}, email=#{email}
@@ -41,7 +41,7 @@
     </update>
 
     <delete id="deleteMember"
-        parameterType="com.example.myapp.member.model.Member">
+        parameterType="com.example.app.member.model.Member">
         <![CDATA[
             DELETE FROM member
             WHERE  userid=#{userid} AND password=#{password}
