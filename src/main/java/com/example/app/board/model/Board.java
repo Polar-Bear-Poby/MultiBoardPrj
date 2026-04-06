@@ -26,7 +26,7 @@ public class Board {
     private int replyStep;
     private int page;
     private MultipartFile file;
-    private int fieldId;
+    private int fileId;
     private String fileName;
     private long fileSize;
     private String fileContentType;
